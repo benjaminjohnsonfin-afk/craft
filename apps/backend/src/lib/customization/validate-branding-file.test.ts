@@ -9,6 +9,10 @@ const WEBP_MAGIC = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x0
 const SVG_CONTENT = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
 const EVIL_SVG = new TextEncoder().encode('<svg><script>alert(1)</script></svg>');
 const EVENT_SVG = new TextEncoder().encode('<svg onload="evil()"><rect/></svg>');
+const EXTERNAL_HREF_SVG = new TextEncoder().encode('<svg><image href="http://evil.com/payload.svg"/></svg>');
+const XLINK_HREF_SVG = new TextEncoder().encode('<svg><image xlink:href="https://evil.com/payload.svg"/></svg>');
+const DATA_URI_SVG = new TextEncoder().encode('<svg><image href="data:text/html,<script>alert(1)</script>"/></svg>');
+const PROTOCOL_HREF_SVG = new TextEncoder().encode('<svg><a href="javascript:alert(1)"><circle/></a></svg>');
 const GARBAGE = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
 
 const KB = 1024;
@@ -109,9 +113,39 @@ describe('validateBrandingFile — SVG safety', () => {
         expect(r.code).toBe('UNSAFE_SVG');
     });
 
+    it('rejects SVG with external href reference', () => {
+        const r = validateBrandingFile('logo.svg', 'image/svg+xml', EXTERNAL_HREF_SVG.length, EXTERNAL_HREF_SVG);
+        expect(r.valid).toBe(false);
+        expect(r.code).toBe('UNSAFE_SVG');
+    });
+
+    it('rejects SVG with external xlink:href reference', () => {
+        const r = validateBrandingFile('logo.svg', 'image/svg+xml', XLINK_HREF_SVG.length, XLINK_HREF_SVG);
+        expect(r.valid).toBe(false);
+        expect(r.code).toBe('UNSAFE_SVG');
+    });
+
+    it('rejects SVG with data: URI href', () => {
+        const r = validateBrandingFile('logo.svg', 'image/svg+xml', DATA_URI_SVG.length, DATA_URI_SVG);
+        expect(r.valid).toBe(false);
+        expect(r.code).toBe('UNSAFE_SVG');
+    });
+
+    it('rejects SVG with javascript: protocol href', () => {
+        const r = validateBrandingFile('logo.svg', 'image/svg+xml', PROTOCOL_HREF_SVG.length, PROTOCOL_HREF_SVG);
+        expect(r.valid).toBe(false);
+        expect(r.code).toBe('UNSAFE_SVG');
+    });
+
     it('rejects non-SVG content declared as SVG', () => {
         const r = validateBrandingFile('logo.svg', 'image/svg+xml', GARBAGE.length, GARBAGE);
         expect(r.valid).toBe(false);
         expect(r.code).toBe('UNSAFE_SVG');
+    });
+
+    it('accepts SVG with local fragment href references', () => {
+        const localFragmentSvg = new TextEncoder().encode('<svg><use href="#myIcon"/></svg>');
+        const r = validateBrandingFile('logo.svg', 'image/svg+xml', localFragmentSvg.length, localFragmentSvg);
+        expect(r.valid).toBe(true);
     });
 });

@@ -21,8 +21,22 @@ function matchesMagic(buf: Uint8Array, magic: number[]): boolean {
 
 function isSvgContent(buf: Uint8Array): boolean {
     const text = new TextDecoder().decode(buf.slice(0, 512));
-    // Must contain <svg and must NOT contain script tags or JS event handlers
-    return /<svg[\s>]/i.test(text) && !/<script/i.test(text) && !/\bon\w+\s*=/i.test(text);
+    const fullText = new TextDecoder().decode(buf);
+
+    // Must contain <svg
+    if (!/<svg[\s>]/i.test(text)) return false;
+
+    // Must NOT contain script tags
+    if (/<script/i.test(fullText)) return false;
+
+    // Must NOT contain JS event handlers (onclick, onload, etc.)
+    if (/\bon\w+\s*=/i.test(fullText)) return false;
+
+    // Must NOT contain external references via xlink:href or href attributes
+    // that could load external resources (e.g., xlink:href="http://...")
+    if (/\b(xlink:)?href\s*=\s*["'](?:https?:|data:|javascript:|[^#]|\/\/)/i.test(fullText)) return false;
+
+    return true;
 }
 
 /**
