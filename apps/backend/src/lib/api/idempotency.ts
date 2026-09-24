@@ -9,6 +9,12 @@
  * Cache entries are scoped per authenticated user — keys from different users
  * never collide even if the raw key string is identical.
  *
+ * Caching policy:
+ *   - 2xx (200-299): Always cached (successful responses)
+ *   - 4xx (400-499): Cached for permanent client errors (400, 401, 403, 404, 422, etc.)
+ *                    NOT cached for transient errors (408, 429)
+ *   - 5xx (500-599): Never cached (transient server errors that may succeed on retry)
+ *
  * Configuration:
  *   IDEMPOTENCY_TTL_MS      — Cache TTL in milliseconds. Default: 86_400_000 (24 h)
  *   IDEMPOTENCY_MAX_ENTRIES — Hard cap on cached entries; when exceeded the
@@ -66,6 +72,22 @@ function sweepIntervalMs(): number {
 
 function cacheKey(userId: string, idempotencyKey: string): string {
     return `${userId}:${idempotencyKey}`;
+}
+
+/**
+ * Determine if a response status code should be cached.
+ * - 2xx: Always cached (success)
+ * - 4xx: Cached for permanent errors (400, 401, 403, 404, 422, etc.)
+ *        NOT cached for transient errors (408, 429)
+ * - 5xx: Never cached (transient server errors)
+ */
+function shouldCacheResponse(status: number): boolean {
+    if (status >= 200 && status < 300) return true;
+    if (status >= 400 && status < 500) {
+        const transientClientErrors = new Set([408, 429]);
+        return !transientClientErrors.has(status);
+    }
+    return false;
 }
 
 /** Remove every cache entry whose TTL has elapsed. */
@@ -142,7 +164,7 @@ export function withIdempotency(
 
         const response = await handler(req);
 
-        if (response.status >= 200 && response.status < 300) {
+        if (shouldCacheResponse(response.status)) {
             const body = await response.clone().json().catch(() => null);
             if (cache.size >= maxEntries()) evictExpired();
             cache.set(key, { status: response.status, body, storedAt: Date.now() });

@@ -130,26 +130,68 @@ describe('withIdempotency — different keys same user', () => {
     });
 });
 
-// ── Non-2xx responses not cached ──────────────────────────────────────────────
+// ── 4xx caching behavior ──────────────────────────────────────────────────────
 
-describe('withIdempotency — non-2xx not cached', () => {
-    it('does not cache 4xx error responses', async () => {
+describe('withIdempotency — 4xx caching', () => {
+    it('caches permanent 4xx errors (422 Unprocessable Entity)', async () => {
         const handler = makeHandler(422, { error: 'Invalid config' });
         const wrapped = withIdempotency('user_a', handler);
 
-        await wrapped(makeRequest('key-err'));
-        await wrapped(makeRequest('key-err'));
+        await wrapped(makeRequest('key-422'));
+        await wrapped(makeRequest('key-422'));
 
-        // Handler called twice — error was not cached
-        expect(handler).toHaveBeenCalledTimes(2);
+        // Handler called once — 422 was cached
+        expect(handler).toHaveBeenCalledTimes(1);
     });
 
+    it('caches other permanent 4xx errors (400, 401, 403, 404)', async () => {
+        for (const status of [400, 401, 403, 404]) {
+            clearIdempotencyCache();
+            const handler = makeHandler(status, { error: 'Client error' });
+            const wrapped = withIdempotency('user_a', handler);
+
+            await wrapped(makeRequest(`key-${status}`));
+            await wrapped(makeRequest(`key-${status}`));
+
+            expect(handler).toHaveBeenCalledTimes(1);
+        }
+    });
+
+    it('does NOT cache transient 4xx errors (408, 429)', async () => {
+        for (const status of [408, 429]) {
+            clearIdempotencyCache();
+            const handler = makeHandler(status, { error: 'Transient error' });
+            const wrapped = withIdempotency('user_a', handler);
+
+            await wrapped(makeRequest(`key-${status}`));
+            await wrapped(makeRequest(`key-${status}`));
+
+            // Handler called twice — transient error was not cached
+            expect(handler).toHaveBeenCalledTimes(2);
+        }
+    });
+});
+
+// ── Non-2xx responses caching policy ───────────────────────────────────────────
+
+describe('withIdempotency — 5xx not cached', () => {
     it('does not cache 5xx error responses', async () => {
         const handler = makeHandler(500, { error: 'Internal server error' });
         const wrapped = withIdempotency('user_a', handler);
 
-        await wrapped(makeRequest('key-err'));
-        await wrapped(makeRequest('key-err'));
+        await wrapped(makeRequest('key-500'));
+        await wrapped(makeRequest('key-500'));
+
+        // Handler called twice — 5xx was not cached
+        expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not cache 503 Service Unavailable', async () => {
+        const handler = makeHandler(503, { error: 'Service unavailable' });
+        const wrapped = withIdempotency('user_a', handler);
+
+        await wrapped(makeRequest('key-503'));
+        await wrapped(makeRequest('key-503'));
 
         expect(handler).toHaveBeenCalledTimes(2);
     });
