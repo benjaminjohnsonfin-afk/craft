@@ -112,6 +112,17 @@ export class EmailDeliveryService {
         return this.supabase ?? (createClient() as unknown as SupabaseClient);
     }
 
+    // ── Template caching and invalidation ──────────────────────────────────────
+
+    /**
+     * Clear all cached compiled templates. Useful in development or test environments
+     * where templates may change without a process restart.
+     */
+    clearTemplateCache(): void {
+        this.layoutCache = null;
+        this.templateCache.clear();
+    }
+
     // ── Template rendering ────────────────────────────────────────────────────
 
     private compileLayout(): HandlebarsTemplateDelegate {

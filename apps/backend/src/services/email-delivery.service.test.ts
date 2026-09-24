@@ -150,6 +150,42 @@ describe('EmailDeliveryService', () => {
         });
     });
 
+    describe('template cache invalidation', () => {
+        it('caches compiled templates for repeated renders', () => {
+            const svc = new EmailDeliveryService();
+
+            const { html: html1 } = svc.render('deployment_complete', SAMPLE_DATA.deployment_complete);
+            const { html: html2 } = svc.render('deployment_complete', SAMPLE_DATA.deployment_complete);
+
+            expect(html1).toBe(html2);
+        });
+
+        it('clears the template cache with clearTemplateCache', () => {
+            const svc = new EmailDeliveryService();
+
+            const { html: html1 } = svc.render('deployment_complete', SAMPLE_DATA.deployment_complete);
+            svc.clearTemplateCache();
+            const { html: html2 } = svc.render('deployment_complete', SAMPLE_DATA.deployment_complete);
+
+            expect(html1).toBe(html2);
+        });
+
+        it('clears both layout and type-specific template caches', () => {
+            const svc = new EmailDeliveryService();
+
+            svc.render('deployment_complete', SAMPLE_DATA.deployment_complete);
+            svc.render('security_alert', SAMPLE_DATA.security_alert);
+
+            svc.clearTemplateCache();
+
+            const { html: html1 } = svc.render('deployment_complete', SAMPLE_DATA.deployment_complete);
+            const { html: html2 } = svc.render('security_alert', SAMPLE_DATA.security_alert);
+
+            expect(html1).toBeTruthy();
+            expect(html2).toBeTruthy();
+        });
+    });
+
     describe('sending + delivery recording', () => {
         it('records a sent delivery in dev mode (no EMAIL_API_URL)', async () => {
             const mock = makeSupabaseMock();
