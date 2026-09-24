@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 export interface WebhookDelivery {
     id: string;
     deliveryId: string;
+    installationId: number;
     eventType: string;
     payload: Record<string, unknown>;
     headers: Record<string, string>;
@@ -37,6 +38,7 @@ export interface WebhookDelivery {
 
 export interface RecordDeliveryRequest {
     deliveryId: string;
+    installationId: number;
     eventType: string;
     payload: Record<string, unknown>;
     headers: Record<string, string>;
@@ -123,6 +125,7 @@ export class WebhookDeliveryService {
             // Use the database function for atomic insert with conflict handling
             const { data, error } = await supabase.rpc('record_webhook_delivery', {
                 p_delivery_id: request.deliveryId,
+                p_installation_id: request.installationId,
                 p_event_type: request.eventType,
                 p_payload: request.payload as any,
                 p_headers: request.headers as any,
@@ -289,9 +292,10 @@ export class WebhookDeliveryService {
      * new delivery ID will be processed once.
      *
      * @param originalDeliveryId - Original delivery ID to replay
+     * @param installationId - GitHub App installation ID for scoping
      * @returns Result with new delivery ID for the replayed event
      */
-    async replayDelivery(originalDeliveryId: string): Promise<ReplayDeliveryResult> {
+    async replayDelivery(originalDeliveryId: string, installationId: number): Promise<ReplayDeliveryResult> {
         try {
             const supabase = createClient();
 
@@ -300,6 +304,7 @@ export class WebhookDeliveryService {
                 .from('github_webhook_deliveries')
                 .select('*')
                 .eq('delivery_id', originalDeliveryId)
+                .eq('installation_id', installationId)
                 .single();
 
             if (fetchError || !original) {
@@ -366,12 +371,13 @@ export class WebhookDeliveryService {
     }
 
     /**
-     * Gets a delivery by its delivery ID.
+     * Gets a delivery by its delivery ID, scoped to the installation.
      *
      * @param deliveryId - GitHub delivery ID
+     * @param installationId - GitHub App installation ID for scoping
      * @returns Delivery record or null if not found
      */
-    async getDelivery(deliveryId: string): Promise<WebhookDelivery | null> {
+    async getDelivery(deliveryId: string, installationId: number): Promise<WebhookDelivery | null> {
         try {
             const supabase = createClient();
 
@@ -379,6 +385,7 @@ export class WebhookDeliveryService {
                 .from('github_webhook_deliveries')
                 .select('*')
                 .eq('delivery_id', deliveryId)
+                .eq('installation_id', installationId)
                 .single();
 
             if (error || !data) {
@@ -393,18 +400,20 @@ export class WebhookDeliveryService {
     }
 
     /**
-     * Gets recent deliveries for monitoring.
+     * Gets recent deliveries for monitoring, scoped to the installation.
      *
+     * @param installationId - GitHub App installation ID for scoping
      * @param limit - Maximum number of deliveries to return
      * @returns Array of delivery records
      */
-    async getRecentDeliveries(limit: number = 50): Promise<WebhookDelivery[]> {
+    async getRecentDeliveries(installationId: number, limit: number = 50): Promise<WebhookDelivery[]> {
         try {
             const supabase = createClient();
 
             const { data, error } = await supabase
                 .from('github_webhook_deliveries')
                 .select('*')
+                .eq('installation_id', installationId)
                 .order('created_at', { ascending: false })
                 .limit(limit);
 
@@ -425,6 +434,7 @@ export class WebhookDeliveryService {
         return {
             id: data.id,
             deliveryId: data.delivery_id,
+            installationId: data.installation_id,
             eventType: data.event_type,
             payload: data.payload,
             headers: data.headers,
